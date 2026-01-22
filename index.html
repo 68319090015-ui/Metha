@@ -1,146 +1,121 @@
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
-#include <RTClib.h>
-
-/* ================== PIN ================== */
-#define LED_PIN     D6      // GPIO12
-#define BUZZER_PIN  D5      // GPIO14
-
-/* ================== OBJECT ================== */
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-RTC_DS3231 rtc;
-ESP8266WebServer server(80);
-
-/* ================== BUZZER ================== */
-void beep(int ms = 80) {
-  digitalWrite(BUZZER_PIN, HIGH);
-  delay(ms);
-  digitalWrite(BUZZER_PIN, LOW);
-}
-
-/* ================== WEB PAGE ================== */
-const char MAIN_page[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>ESP8266 LCD Control</title>
-<style>
-body{
-  background:#0f172a;
-  color:white;
-  font-family:Arial;
-  text-align:center;
-}
-.card{
-  background:#1e293b;
-  width:300px;
-  margin:auto;
-  padding:20px;
-  border-radius:15px;
-}
-button,input{
-  width:100%;
-  padding:10px;
-  margin-top:10px;
-  font-size:16px;
-  border-radius:10px;
-  border:none;
-}
-button{
-  background:#22c55e;
-  color:black;
-}
-</style>
-</head>
-<body>
-<h2>ESP8266 Control Panel</h2>
-<div class="card">
-<form action="/text">
-<input name="msg" placeholder="พิมพ์ข้อความ">
-<button type="submit">แสดงข้อความ</button>
-</form>
+  <meta charset="UTF-8">
+  <title>ESP8266 Control Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<a href="/time"><button>แสดงเวลา</button></a>
-<a href="/ledon"><button>เปิดไฟ</button></a>
-<a href="/ledoff"><button>ปิดไฟ</button></a>
-</div>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      background: linear-gradient(135deg, #0f172a, #020617);
+      font-family: Arial, Helvetica, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+    }
+
+    .panel {
+      background: #020617;
+      width: 350px;
+      padding: 25px;
+      border-radius: 20px;
+      box-shadow: 0 0 30px rgba(0,0,0,0.6);
+      text-align: center;
+    }
+
+    h2 {
+      margin-bottom: 20px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 16px;
+      margin-bottom: 15px;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      background: #22c55e;
+      color: black;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      background: #16a34a;
+    }
+
+    .danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .danger:hover {
+      background: #dc2626;
+    }
+
+    .info {
+      background: #38bdf8;
+      color: black;
+    }
+
+    .info:hover {
+      background: #0ea5e9;
+    }
+
+    footer {
+      margin-top: 10px;
+      font-size: 12px;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="panel">
+    <h2>ESP8266 Control</h2>
+
+    <!-- ส่งข้อความ -->
+    <input id="msg" type="text" placeholder="Enter message for LCD">
+    <button onclick="sendText()">Send Text to LCD</button>
+
+    <!-- เมนู -->
+    <button class="info" onclick="sendCmd('/time')">Show Time</button>
+    <button onclick="sendCmd('/ledon')">LED ON</button>
+    <button class="danger" onclick="sendCmd('/ledoff')">LED OFF</button>
+
+    <footer>
+      ESP8266 Web Control<br>
+      GitHub Pages Compatible
+    </footer>
+  </div>
+
+  <script>
+    // เปลี่ยน IP ให้ตรงกับ ESP8266
+    const ESP_IP = "http://192.168.4.1";
+
+    function sendCmd(path) {
+      fetch(ESP_IP + path)
+        .catch(err => console.log(err));
+    }
+
+    function sendText() {
+      const msg = document.getElementById("msg").value;
+      if (msg.length === 0) return;
+      fetch(ESP_IP + "/text?msg=" + encodeURIComponent(msg))
+        .catch(err => console.log(err));
+    }
+  </script>
 </body>
 </html>
-)rawliteral";
-
-/* ================== SETUP ================== */
-void setup() {
-  Serial.begin(115200);
-
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
-  digitalWrite(BUZZER_PIN, LOW); // กันดังตอนบูต
-
-  /* I2C */
-  Wire.begin(D2, D1);
-
-  /* LCD */
-  lcd.init();
-  lcd.backlight();
-  lcd.clear();
-  lcd.print("ESP Ready");
-
-  /* RTC */
-  rtc.begin();
-
-  /* WiFi AP */
-  WiFi.softAP("ESP_LCD", "12345678");
-  Serial.print("IP: ");
-  Serial.println(WiFi.softAPIP());
-
-  /* ROUTES */
-  server.on("/", [](){
-    server.send_P(200, "text/html", MAIN_page);
-  });
-
-  server.on("/ledon", [](){
-    digitalWrite(LED_PIN, HIGH);
-    beep();
-    lcd.clear();
-    lcd.print("LED ON");
-    server.sendHeader("Location","/");
-    server.send(303);
-  });
-
-  server.on("/ledoff", [](){
-    digitalWrite(LED_PIN, LOW);
-    beep();
-    lcd.clear();
-    lcd.print("LED OFF");
-    server.sendHeader("Location","/");
-    server.send(303);
-  });
-
-  server.on("/text", [](){
-    String msg = server.arg("msg");
-    beep();
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print(msg.substring(0,16));
-    if(msg.length()>16){
-      lcd.setCursor(0,1);
-      lcd.print(msg.substring(16,32));
-    }
-    server.sendHeader("Location","/");
-    server.send(303);
-  });
-
-  server.on("/time", [](){
-    DateTime now = rtc.now();
-    char buf[17];
-    sprintf(buf,"%02d:%02d:%02d",
-            now.hour(),now.minute(),now.second());
-    beep();
-    lcd.clear();
-    lcd.print("Time");
-    lcd.setCursor(0,1);
-    lcd.print(buf);
